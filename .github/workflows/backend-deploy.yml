@@ -1,12 +1,9 @@
 name: GCR for Backend
 
 on:
-  pull_request:
-    types: [opened, closed, synchronize]
-
-  pull_request_target:
-    types:
-      - closed
+  push:
+    branches:
+      - main
 
 jobs:
   setup-and-build:
