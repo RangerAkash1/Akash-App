@@ -1,42 +1,89 @@
-name: Deploy Backend to Cloud Run
+name: GCR for Backend
 
 on:
-  push:
-    branches:
-      - main  # Triggers only on push to main branch
+  pull_request:
+    types: [opened, closed, synchronize]
+
+  pull_request_target:
+    types:
+      - closed
 
 jobs:
-  deploy:
-    name: Build and Deploy to Cloud Run
+  setup-and-build:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      deployments: write
+      actions: read
+      checks: read
+      contents: read
+      issues: write
+      security-events: read
+      statuses: read
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      # Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      # Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Npm cache
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: ./backend/package-lock.json
+      - run: npm ci
+
+      # Authenticate to Google Cloud
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # Set up Google Cloud SDK
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
-          service_account_key: ${{ secrets.GCP_SA_KEY }}
-          export_default_credentials: true
 
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker us-central1-docker.pkg.dev
-
-      - name: Build Docker Image
+      # Configure Docker to use gcloud as a credential helper
+      - name: Configure Docker
         run: |
-          docker build -t us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/backend-repo/backend-image:${{ github.sha }} ./backend
+          gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev
+      # Step 7: Get the latest tag using GitHub Action
+      - name: Get the latest tag
+        id: latest-tag
+        uses: actions-ecosystem/action-get-latest-tag@v1
+        with:
+          fetch-depth: 0
 
-      - name: Push Docker Image
-        run: |
-          docker push us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/backend-repo/backend-image:${{ github.sha }}
+      # Build & push to Docker
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/backend-repo/backend-image:${{ steps.latest-tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
+      # Deploy to Cloud Run
       - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: demo-dashboard
+          image: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/backend-repo/backend-image:${{ steps.latest-tag.outputs.tag }}
+          region: ${{ vars.GCP_REGION }}
+          flags: --allow-unauthenticated
+
+      # Capture the URL of the deployed service
+      - name: Get the URL of the deployed service
+        id: get-url
         run: |
-          gcloud run deploy backend-service \
-            --image=us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/backend-repo/backend-image:${{ github.sha }} \
-            --region=us-central1 \
-            --platform=managed \
-            --allow-unauthenticated \
-            --quiet
+          url=$(gcloud run services describe backend-service --platform managed --region asia-south1 --format 'value(status.url)')
+          echo "url=$url" >> $GITHUB_ENV
