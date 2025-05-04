@@ -10,7 +10,7 @@ COPY package*.json ./
 # Install production dependencies
 RUN npm install --production
 
-# Copy the rest of the backend source code
+# Copy the rest of the backend source code to the container
 COPY . .
 
 # Expose Cloud Run's expected port
