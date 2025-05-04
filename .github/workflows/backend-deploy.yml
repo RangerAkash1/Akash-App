@@ -65,7 +65,7 @@ jobs:
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: demo-dashboard
+          service: backend
           image: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/backend-repo/backend-image:${{ steps.latest-tag.outputs.tag }}
           region: ${{ vars.GCP_REGION }}
           flags: --allow-unauthenticated
