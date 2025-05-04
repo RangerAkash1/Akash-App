@@ -4,7 +4,7 @@ FROM node:18-alpine
 # Set working directory inside the container
 WORKDIR /usr/src/app
 
-# Copy only package files first to leverage Docker cache
+# Copy only package files first to leverage Docker cache for dependencies
 COPY package*.json ./
 
 # Install production dependencies
